@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -10,37 +9,77 @@ import { toast } from '@/hooks/use-toast';
 import CreateTicketDialog from '@/components/CreateTicketDialog';
 import TicketDetails from '@/components/TicketDetails';
 
+
+interface Product {
+  name: string;
+}
+
+interface TicketReply {
+  id: string; 
+}
+
+interface Ticket {
+  id: string;
+  title: string;
+  description: string;
+  status: 'open' | 'closed' | string; // Puoi tipizzare meglio i possibili stati
+  category: 'Account' | 'Orders' | 'Other' | string; // Puoi tipizzare meglio le possibili categorie
+  created_at: string;
+  products: Product | null; // La relazione product può essere presente o meno
+  ticket_replies: TicketReply[] | null; // Le risposte possono essere un array o null
+  reply_count?: number; // Aggiunto per il conteggio delle risposte calcolato
+}
+
+// --- Componente Principale ---
+
 const Tickets = () => {
   const { user } = useAuth();
-  const [tickets, setTickets] = useState([]);
-  const [selectedTicket, setSelectedTicket] = useState(null);
-  const [showCreateDialog, setShowCreateDialog] = useState(false);
-  const [loading, setLoading] = useState(true);
+  const [tickets, setTickets] = useState<Ticket[]>([]); // Tipizzato lo stato dei ticket
+  const [selectedTicket, setSelectedTicket] = useState<Ticket | null>(null); // Tipizzato il ticket selezionato
+  const [showCreateDialog, setShowCreateDialog] = useState<boolean>(false);
+  const [loading, setLoading] = useState<boolean>(true);
+  const [error, setError] = useState<string | null>(null); // Tipizzato lo stato di errore
 
   useEffect(() => {
     if (user) {
       fetchTickets();
+    } else {
+      setLoading(false);
+      setTickets([]);
+      // Considera di mostrare un avviso o reindirizzare se l'utente non è loggato
     }
   }, [user]);
 
   const fetchTickets = async () => {
+    setLoading(true);
+    setError(null);
     try {
-      const { data, error } = await supabase
+      // Usiamo 'as any' temporaneamente per superare i problemi di tipizzazione complessi di select Supabase
+      // In un progetto più grande, potresti voler tipizzare la risposta di Supabase in modo più rigoroso
+      const { data, error: supabaseError } = await supabase
         .from('tickets')
         .select(`
           *,
           products(name),
-          ticket_replies(count)
-        `)
-        .order('created_at', { ascending: false });
+          ticket_replies(id)
+        `) as { data: Ticket[] | null, error: any }; // Tipizzazione del risultato
 
-      if (error) throw error;
-      setTickets(data || []);
-    } catch (error) {
-      console.error('Error fetching tickets:', error);
+      if (supabaseError) {
+        throw supabaseError;
+      }
+
+      const formattedTickets: Ticket[] = (data || []).map(ticket => ({
+        ...ticket,
+        reply_count: ticket.ticket_replies ? ticket.ticket_replies.length : 0
+      }));
+
+      setTickets(formattedTickets);
+    } catch (err: any) { // Tipizzato l'errore come 'any' per accedere a .message
+      console.error('Errore nel caricamento dei ticket:', err);
+      setError("Impossibile caricare i ticket. Per favore, riprova.");
       toast({
-        title: "Error",
-        description: "Failed to load tickets.",
+        title: "Errore",
+        description: `Impossibile caricare i ticket: ${err.message}`,
         variant: "destructive",
       });
     } finally {
@@ -48,19 +87,19 @@ const Tickets = () => {
     }
   };
 
-  const getStatusBadge = (status) => {
+  const getStatusBadge = (status: string) => { // Tipizzato il parametro
     switch (status) {
       case 'open':
-        return <Badge className="bg-green-500 text-white">Open</Badge>;
+        return <Badge className="bg-green-500 text-white">Aperto</Badge>;
       case 'closed':
-        return <Badge variant="destructive">Closed</Badge>;
+        return <Badge variant="destructive">Chiuso</Badge>;
       default:
         return <Badge variant="outline">{status}</Badge>;
     }
   };
 
-  const getCategoryBadge = (category) => {
-    const colors = {
+  const getCategoryBadge = (category: string) => { // Tipizzato il parametro
+    const colors: { [key: string]: string } = { // Tipizzato l'oggetto colors
       'Account': 'bg-blue-500 text-white',
       'Orders': 'bg-purple-500 text-white',
       'Other': 'bg-orange-500 text-white'
@@ -70,8 +109,8 @@ const Tickets = () => {
 
   if (selectedTicket) {
     return (
-      <TicketDetails 
-        ticket={selectedTicket} 
+      <TicketDetails
+        ticket={selectedTicket}
         onBack={() => setSelectedTicket(null)}
         onUpdate={fetchTickets}
       />
@@ -82,9 +121,9 @@ const Tickets = () => {
     <div className="min-h-screen bg-gradient-to-br from-background via-background to-muted/20 py-12">
       <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="mb-12 text-center">
-          <h1 className="text-5xl font-bold gradient-text mb-4">Support Tickets</h1>
+          <h1 className="text-5xl font-bold gradient-text mb-4">Ticket di Supporto</h1>
           <p className="text-muted-foreground text-xl max-w-2xl mx-auto">
-            Get help with your account, orders, or other issues
+            Ricevi aiuto per il tuo account, ordini o altri problemi
           </p>
         </div>
 
@@ -92,19 +131,19 @@ const Tickets = () => {
           <div className="flex space-x-4">
             <Badge variant="outline" className="bg-green-500/10 text-green-400 border-green-500/20">
               <Clock className="h-3 w-3 mr-1" />
-              {tickets.filter(t => t.status === 'open').length} Open
+              {tickets.filter(t => t.status === 'open').length} Aperti
             </Badge>
             <Badge variant="outline" className="bg-red-500/10 text-red-400 border-red-500/20">
               <CheckCircle className="h-3 w-3 mr-1" />
-              {tickets.filter(t => t.status === 'closed').length} Closed
+              {tickets.filter(t => t.status === 'closed').length} Chiusi
             </Badge>
           </div>
-          <Button 
+          <Button
             onClick={() => setShowCreateDialog(true)}
             className="bg-primary hover:bg-primary/90 shadow-lg"
           >
             <Plus className="h-4 w-4 mr-2" />
-            New Ticket
+            Nuovo Ticket
           </Button>
         </div>
 
@@ -115,12 +154,18 @@ const Tickets = () => {
               <div></div>
               <div></div>
             </div>
+            <p className="text-muted-foreground mt-4">Caricamento ticket...</p>
+          </div>
+        ) : error ? (
+          <div className="text-center py-12 text-red-500">
+            <p>{error}</p>
+            <Button onClick={fetchTickets} className="mt-4">Riprova a caricare i Ticket</Button>
           </div>
         ) : tickets.length > 0 ? (
           <div className="grid gap-6">
             {tickets.map((ticket) => (
-              <Card 
-                key={ticket.id} 
+              <Card
+                key={ticket.id}
                 className="glass border-border/50 shadow-xl card-hover cursor-pointer"
                 onClick={() => setSelectedTicket(ticket)}
               >
@@ -140,12 +185,12 @@ const Tickets = () => {
                     </p>
                     <div className="flex items-center justify-between text-sm text-muted-foreground">
                       <div className="flex items-center space-x-4">
-                        {ticket.products && (
-                          <span>Product: {ticket.products.name}</span>
+                        {ticket.products && ticket.products.name && (
+                          <span>Prodotto: {ticket.products.name}</span>
                         )}
                         <div className="flex items-center space-x-1">
                           <MessageSquare className="h-4 w-4" />
-                          <span>{ticket.ticket_replies?.[0]?.count || 0} replies</span>
+                          <span>{ticket.reply_count} risposte</span>
                         </div>
                       </div>
                       <span>{new Date(ticket.created_at).toLocaleDateString()}</span>
@@ -158,12 +203,12 @@ const Tickets = () => {
         ) : (
           <div className="text-center py-12">
             <MessageSquare className="h-16 w-16 text-muted-foreground mx-auto mb-4" />
-            <p className="text-muted-foreground text-lg">No tickets yet</p>
-            <p className="text-muted-foreground/70">Create your first support ticket to get help</p>
+            <p className="text-muted-foreground text-lg">Nessun ticket ancora</p>
+            <p className="text-muted-foreground/70">Crea il tuo primo ticket di supporto per ricevere aiuto</p>
           </div>
         )}
 
-        <CreateTicketDialog 
+        <CreateTicketDialog
           open={showCreateDialog}
           onOpenChange={setShowCreateDialog}
           onTicketCreated={fetchTickets}
